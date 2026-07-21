@@ -122,7 +122,10 @@ async def upload_frame(
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ):
-    session = owned_session(db, session_id, user)
+    # Lock and reserve the sampling slot before invoking vision. Without this,
+    # concurrent uploads can all observe the same stale last_frame_at value and
+    # burst many expensive provider requests for one session.
+    session = owned_session(db, session_id, user, lock=True)
     if session.status == SessionStatus.MATCHED.value:
         return FrameResult(accepted=False, matched=True, confidence=session.last_confidence)
     if session.status != SessionStatus.ACTIVE.value:
@@ -137,6 +140,8 @@ async def upload_frame(
     image = await read_limited(frame, settings.max_frame_bytes)
     if len(image) < 4 or image[:2] != b"\xff\xd8":
         raise HTTPException(status_code=415, detail="A JPEG frame is required")
+    session.last_frame_at = now
+    db.commit()
     service = OpenAIService(settings)
     evaluation_id = new_id("eval")
     try:

@@ -120,6 +120,11 @@ def test_complete_targeted_match_pipeline(client, monkeypatch):
     assert user_frame.status_code == 200
     assert user_frame.content == b"\xff\xd8fake-jpeg\xff\xd9"
 
+    # A second request inside the configured sampling interval is discarded
+    # before it can invoke the vision provider again.
+    too_soon = client.post(f"/v1/watch-sessions/{session_id}/frames", headers=headers, files={"frame": ("frame.jpg", b"\xff\xd8again\xff\xd9", "image/jpeg")})
+    assert too_soon.json()["accepted"] is False
+
     repeated = client.post(f"/v1/watch-sessions/{session_id}/frames", headers=headers, files={"frame": ("frame.jpg", b"\xff\xd8again\xff\xd9", "image/jpeg")})
     assert repeated.json()["matched"] is True
     assert len(FakeFirebase.sent) == 1
