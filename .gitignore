@@ -1,0 +1,26 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+secrets/
+*service-account*.json
+firebase-admin*.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime data
+data/
+*.db
+*.sqlite*
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
