@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ConditionWatch · Evaluations</title>
+  <style>
+    :root{color-scheme:dark;--bg:#070819;--panel:#111329;--line:#292c4a;--text:#f4f2ff;--muted:#aaa9c5;--cyan:#20ddf5;--violet:#8054ff;--red:#ff7897}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#12313b 0,transparent 30%),var(--bg);color:var(--text);font:15px system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:40px 22px}h1{margin:0;font-size:30px}header{display:flex;justify-content:space-between;align-items:end;margin-bottom:28px}.brand{color:var(--cyan);font-weight:700}.sub{color:var(--muted);margin-top:7px}.panel{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(17,19,41,.88)}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:15px 17px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}tr:last-child td{border:0}tbody tr:hover{background:#181a35}a{color:var(--text);text-decoration:none}.condition{max-width:440px}.badge{display:inline-block;padding:5px 9px;border-radius:99px;background:#262947;color:var(--muted);font-size:12px}.matched{background:#123b3d;color:var(--cyan)}.count{font-weight:700;color:var(--cyan)}@media(max-width:760px){.hide{display:none}main{padding:24px 12px}th,td{padding:13px 10px}}
+  </style>
+</head>
+<body><main>
+  <header><div><div class="brand">CONDITIONWATCH ADMIN</div><h1>Frame evaluations</h1><div class="sub">Latest 250 monitoring sessions</div></div></header>
+  <div class="panel"><table><thead><tr><th>Session</th><th>Condition</th><th>User</th><th>Status</th><th>Frames</th><th class="hide">Created</th></tr></thead><tbody>
+  {% for watch,user,count in rows %}
+    <tr><td><a href="/admin/sessions/{{ watch.id }}">{{ watch.id[-10:] }}</a></td><td class="condition"><a href="/admin/sessions/{{ watch.id }}">{{ watch.normalized_condition }}</a></td><td>{{ user.email }}</td><td><span class="badge {{ 'matched' if watch.status == 'matched' else '' }}">{{ watch.status }}</span></td><td class="count">{{ count }}</td><td class="hide">{{ watch.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
+  {% else %}<tr><td colspan="6">No sessions yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</main></body></html>

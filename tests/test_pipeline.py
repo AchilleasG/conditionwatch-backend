@@ -44,6 +44,25 @@ def test_complete_targeted_match_pipeline(client, monkeypatch):
     assert sent_token == token
     assert sent_session == session_id
 
+    assert client.get("/admin/").status_code == 401
+    dashboard = client.get("/admin/", auth=("test-admin", "test-admin-password"))
+    assert dashboard.status_code == 200
+    assert "A dog is visibly on the couch" in dashboard.text
+    detail = client.get(f"/admin/sessions/{session_id}", auth=("test-admin", "test-admin-password"))
+    assert detail.status_code == 200
+    assert "A dog is clearly on the couch" in detail.text
+    from app.database import SessionLocal
+    from app.models import FrameEvaluation
+    from sqlalchemy import select
+    with SessionLocal() as db:
+        evaluation_id = db.scalar(select(FrameEvaluation.id).where(FrameEvaluation.session_id == session_id))
+    retained = client.get(
+        f"/admin/sessions/{session_id}/evaluations/{evaluation_id}/frame",
+        auth=("test-admin", "test-admin-password"),
+    )
+    assert retained.status_code == 200
+    assert retained.content == b"\xff\xd8fake-jpeg\xff\xd9"
+
     repeated = client.post(f"/v1/watch-sessions/{session_id}/frames", headers=headers, files={"frame": ("frame.jpg", b"\xff\xd8again\xff\xd9", "image/jpeg")})
     assert repeated.json()["matched"] is True
     assert len(FakeFirebase.sent) == 1

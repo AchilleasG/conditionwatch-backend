@@ -10,7 +10,7 @@ Production-shaped FastAPI backend for authenticated multi-user camera watch sess
 - OpenAI audio transcription and structured condition normalization
 - Multimodal Responses API evaluation of ephemeral JPEG frames
 - Confidence thresholding, transactional match deduplication, and high-priority data-only FCM
-- No raw camera-frame retention; only decision metadata is stored
+- Protected evaluation dashboard with retained debug frames and model decisions
 - PostgreSQL deployment plus SQLite local fallback
 
 ## Local setup
@@ -54,10 +54,17 @@ uvicorn app.main:app --reload
 
 Swagger UI: `http://localhost:8000/docs`
 
+## Evaluation debugging
+
+Set `ADMIN_USERNAME` and a long `ADMIN_PASSWORD`, then open `http://localhost:8000/admin/`.
+Every frame that reaches vision evaluation is retained alongside its match result, confidence,
+explanation, model, and timestamp. The browser will request HTTP Basic credentials. Disable frame
+retention with `RETAIN_EVALUATION_FRAMES=false` when debugging is no longer required.
+
 ## Android connection
 
 Deploy behind HTTPS, then set Android `API_BASE_URL` to the public URL with a trailing slash and set `DEMO_MODE=false`. The web login URL is derived from the same base URL.
 
 ## Privacy and operations
 
-Frames are sent to OpenAI for evaluation but never stored by this service. OpenAI response storage defaults off. Production should add database migrations, managed secrets, HTTPS termination, request-level observability without frame bodies or tokens, backups, retention cleanup for evaluation metadata, and load tests based on the configured sampling interval.
+Evaluation frames are retained while `RETAIN_EVALUATION_FRAMES=true` and therefore contain sensitive camera data. Restrict `/admin/`, use a strong secret, define an operational deletion policy, and disable retention when it is not needed. OpenAI response storage defaults off.

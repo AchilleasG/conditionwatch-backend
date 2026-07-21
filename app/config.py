@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     firebase_credentials_json: str | None = None
     firebase_project_id: str | None = None
 
+    admin_username: str = "admin"
+    admin_password: str | None = None
+    evaluation_frames_dir: str = "./data/evaluation-frames"
+    retain_evaluation_frames: bool = True
+
     max_audio_bytes: int = 12 * 1024 * 1024
     max_frame_bytes: int = 4 * 1024 * 1024
     default_sample_interval_ms: int = 1500

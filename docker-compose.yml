@@ -19,8 +19,10 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
     volumes:
       - ./secrets/conditionwatch-firebase-adminsdk-fbsvc-a1e6e0e356.json:/run/secrets/firebase-service-account.json:ro
+      - conditionwatch-evaluation-frames:/srv/data/evaluation-frames
     ports: ["8000:8000"]
     depends_on:
       db: {condition: service_healthy}
 volumes:
   conditionwatch-db:
+  conditionwatch-evaluation-frames:

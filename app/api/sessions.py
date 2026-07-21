@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import logging
 import tempfile
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from ..config import Settings, get_settings
 from ..database import get_db
-from ..models import Device, FrameEvaluation, SessionStatus, User, WatchSession
+from ..models import Device, FrameEvaluation, SessionStatus, User, WatchSession, new_id
 from ..schemas import CreateSessionResponse, DeviceTokenRequest, FrameResult, SessionOut, StartSessionRequest
 from ..security import get_current_user
 from ..services.devices import upsert_device
@@ -15,6 +16,7 @@ from ..services.firebase_service import FirebaseService
 from ..services.openai_service import OpenAIService
 
 router = APIRouter(prefix="/v1", tags=["watch sessions"])
+logger = logging.getLogger(__name__)
 
 
 def owned_session(db: Session, session_id: str, user: User, lock: bool = False) -> WatchSession:
@@ -124,12 +126,19 @@ async def upload_frame(
     decision = await run_in_threadpool(service.evaluate_image, image, session.normalized_condition, user.id)
     is_match = decision.matched and decision.confidence >= settings.vision_match_threshold
     evaluation = FrameEvaluation(
+        id=new_id("eval"),
         session_id=session.id,
         matched=is_match,
         confidence=decision.confidence,
         explanation=decision.explanation,
         model=settings.openai_vision_model,
     )
+    if settings.retain_evaluation_frames:
+        from ..services.evaluation_frames import save_evaluation_frame
+        try:
+            await run_in_threadpool(save_evaluation_frame, settings, session.id, evaluation.id, image)
+        except OSError:
+            logger.exception("Could not retain evaluation frame %s", evaluation.id)
     db.add(evaluation)
     session.last_frame_at = now
     session.last_confidence = decision.confidence
