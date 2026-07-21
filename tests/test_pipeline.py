@@ -21,6 +21,21 @@ class FakeFirebase:
         return "message-id"
 
 
+class SilentOpenAI(FakeOpenAI):
+    def transcribe(self, path):
+        raise ValueError("The recording contained no recognizable speech")
+
+
+def test_silent_recording_returns_friendly_validation_error(client, monkeypatch):
+    import app.api.sessions as routes
+    monkeypatch.setattr(routes, "OpenAIService", lambda settings: SilentOpenAI())
+    registration = client.post("/v1/auth/register", json={"email": "silent@example.com", "display_name": "Silent", "password": "correct-horse-battery"}).json()
+    headers = {"Authorization": f"Bearer {registration['access_token']}"}
+    response = client.post("/v1/watch-sessions/from-audio", headers=headers, files={"audio": ("silent.m4a", b"silent-audio", "audio/mp4")})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "I couldn’t hear any clear speech. Hold the button and try speaking again."
+
+
 def test_complete_targeted_match_pipeline(client, monkeypatch):
     import app.api.sessions as routes
     monkeypatch.setattr(routes, "OpenAIService", lambda settings: FakeOpenAI())

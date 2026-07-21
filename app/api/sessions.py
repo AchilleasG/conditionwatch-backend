@@ -4,6 +4,7 @@ import logging
 import tempfile
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from openai import APIError, BadRequestError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -58,8 +59,20 @@ async def create_from_audio(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
             temp.write(content); temp_path = Path(temp.name)
         service = OpenAIService(settings)
-        transcript = await run_in_threadpool(service.transcribe, temp_path)
-        interpretation = await run_in_threadpool(service.normalize_condition, transcript, user.id)
+        try:
+            transcript = await run_in_threadpool(service.transcribe, temp_path)
+        except (ValueError, BadRequestError):
+            raise HTTPException(status_code=422, detail="I couldn’t hear any clear speech. Hold the button and try speaking again.")
+        except APIError as exc:
+            logger.warning("Transcription provider error: %s", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Speech recognition is temporarily unavailable. Please try again.")
+        try:
+            interpretation = await run_in_threadpool(service.normalize_condition, transcript, user.id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="I couldn’t understand that condition. Please try saying it another way.")
+        except APIError as exc:
+            logger.warning("Condition provider error: %s", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Condition processing is temporarily unavailable. Please try again.")
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
