@@ -7,27 +7,23 @@ from ..config import Settings
 from ..models import Device, WatchSession
 
 
+def initialize_firebase(settings: Settings) -> None:
+    if firebase_admin._apps:
+        return
+    options = {"projectId": settings.firebase_project_id} if settings.firebase_project_id else None
+    if settings.firebase_credentials_json:
+        cred = credentials.Certificate(str(Path(settings.firebase_credentials_json)))
+        firebase_admin.initialize_app(cred, options)
+    else:
+        firebase_admin.initialize_app(options=options)
+
+
 class FirebaseService:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._initialized = False
-
-    def _initialize(self) -> None:
-        if self._initialized:
-            return
-        if firebase_admin._apps:
-            self._initialized = True
-            return
-        options = {"projectId": self.settings.firebase_project_id} if self.settings.firebase_project_id else None
-        if self.settings.firebase_credentials_json:
-            cred = credentials.Certificate(str(Path(self.settings.firebase_credentials_json)))
-            firebase_admin.initialize_app(cred, options)
-        else:
-            firebase_admin.initialize_app(options=options)
-        self._initialized = True
 
     def send_match(self, db: Session, session: WatchSession, device: Device) -> str:
-        self._initialize()
+        initialize_firebase(self.settings)
         message = messaging.Message(
             token=device.fcm_token,
             data={
