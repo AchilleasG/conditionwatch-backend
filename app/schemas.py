@@ -70,6 +70,7 @@ class EvaluationOut(BaseModel):
     model: str
     createdAt: str
     frameAvailable: bool
+    outcome: str
 
 
 class ConditionInterpretation(BaseModel):

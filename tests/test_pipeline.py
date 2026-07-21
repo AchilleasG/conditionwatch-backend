@@ -26,6 +26,11 @@ class SilentOpenAI(FakeOpenAI):
         raise ValueError("The recording contained no recognizable speech")
 
 
+class RejectingVisionOpenAI(FakeOpenAI):
+    def evaluate_image(self, jpeg, condition, user_id):
+        raise ValueError("This image request could not be evaluated")
+
+
 def test_silent_recording_returns_friendly_validation_error(client, monkeypatch):
     import app.api.sessions as routes
     monkeypatch.setattr(routes, "OpenAIService", lambda settings: SilentOpenAI())
@@ -34,6 +39,24 @@ def test_silent_recording_returns_friendly_validation_error(client, monkeypatch)
     response = client.post("/v1/watch-sessions/from-audio", headers=headers, files={"audio": ("silent.m4a", b"silent-audio", "audio/mp4")})
     assert response.status_code == 422
     assert response.json()["detail"] == "I couldn’t hear any clear speech. Hold the button and try speaking again."
+
+
+def test_rejected_frame_is_visible_in_session_history(client, monkeypatch):
+    import app.api.sessions as routes
+    monkeypatch.setattr(routes, "OpenAIService", lambda settings: RejectingVisionOpenAI())
+    registration = client.post("/v1/auth/register", json={"email": "rejected@example.com", "display_name": "Rejected", "password": "correct-horse-battery"}).json()
+    headers = {"Authorization": f"Bearer {registration['access_token']}"}
+    created = client.post("/v1/watch-sessions/from-audio", headers=headers, files={"audio": ("command.m4a", b"audio", "audio/mp4")}).json()
+    session_id = created["sessionId"]
+    token = "specific-fcm-token-for-rejected-frame"
+    assert client.post(f"/v1/watch-sessions/{session_id}/start", headers=headers, json={"condition": created["normalizedCondition"], "fcmToken": token}).status_code == 204
+    frame = client.post(f"/v1/watch-sessions/{session_id}/frames", headers=headers, files={"frame": ("frame.jpg", b"\xff\xd8rejected\xff\xd9", "image/jpeg")})
+    assert frame.status_code == 200
+    assert frame.json() == {"accepted": True, "matched": False, "confidence": None}
+    evaluations = client.get(f"/v1/watch-sessions/{session_id}/evaluations", headers=headers).json()
+    assert evaluations[0]["outcome"] == "rejected"
+    assert evaluations[0]["explanation"] == "Analysis rejected: This image request could not be evaluated"
+    assert evaluations[0]["frameAvailable"] is True
 
 
 def test_complete_targeted_match_pipeline(client, monkeypatch):

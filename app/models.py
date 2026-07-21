@@ -77,5 +77,6 @@ class FrameEvaluation(Base):
     confidence: Mapped[float] = mapped_column(Float)
     explanation: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(120))
+    outcome: Mapped[str] = mapped_column(String(24), default="success", server_default="success")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     session: Mapped[WatchSession] = relationship(back_populates="evaluations")

@@ -138,22 +138,52 @@ async def upload_frame(
     if len(image) < 4 or image[:2] != b"\xff\xd8":
         raise HTTPException(status_code=415, detail="A JPEG frame is required")
     service = OpenAIService(settings)
-    decision = await run_in_threadpool(service.evaluate_image, image, session.normalized_condition, user.id)
+    evaluation_id = new_id("eval")
+    try:
+        decision = await run_in_threadpool(service.evaluate_image, image, session.normalized_condition, user.id)
+    except (BadRequestError, ValueError) as exc:
+        provider_message = getattr(exc, "message", None) or str(exc)
+        explanation = f"Analysis rejected: {provider_message}"[:1000]
+        evaluation = FrameEvaluation(
+            id=evaluation_id,
+            session_id=session.id,
+            matched=False,
+            confidence=0,
+            explanation=explanation,
+            model=settings.openai_vision_model,
+            outcome="rejected",
+        )
+        await retain_frame(settings, session.id, evaluation.id, image)
+        db.add(evaluation)
+        session.last_frame_at = now
+        db.commit()
+        return FrameResult(accepted=True, matched=False, confidence=None)
+    except APIError as exc:
+        logger.warning("Vision provider error for session %s: %s", session.id, type(exc).__name__)
+        evaluation = FrameEvaluation(
+            id=evaluation_id,
+            session_id=session.id,
+            matched=False,
+            confidence=0,
+            explanation="Analysis failed: the vision provider was temporarily unavailable.",
+            model=settings.openai_vision_model,
+            outcome="failed",
+        )
+        await retain_frame(settings, session.id, evaluation.id, image)
+        db.add(evaluation)
+        session.last_frame_at = now
+        db.commit()
+        return FrameResult(accepted=True, matched=False, confidence=None)
     is_match = decision.matched and decision.confidence >= settings.vision_match_threshold
     evaluation = FrameEvaluation(
-        id=new_id("eval"),
+        id=evaluation_id,
         session_id=session.id,
         matched=is_match,
         confidence=decision.confidence,
         explanation=decision.explanation,
         model=settings.openai_vision_model,
     )
-    if settings.retain_evaluation_frames:
-        from ..services.evaluation_frames import save_evaluation_frame
-        try:
-            await run_in_threadpool(save_evaluation_frame, settings, session.id, evaluation.id, image)
-        except OSError:
-            logger.exception("Could not retain evaluation frame %s", evaluation.id)
+    await retain_frame(settings, session.id, evaluation.id, image)
     db.add(evaluation)
     session.last_frame_at = now
     session.last_confidence = decision.confidence
@@ -232,7 +262,18 @@ def list_evaluations(
         model=e.model,
         createdAt=e.created_at.isoformat(),
         frameAvailable=evaluation_frame_path(settings, session_id, e.id).is_file(),
+        outcome=e.outcome,
     ) for e in evaluations]
+
+
+async def retain_frame(settings: Settings, session_id: str, evaluation_id: str, image: bytes) -> None:
+    if not settings.retain_evaluation_frames:
+        return
+    from ..services.evaluation_frames import save_evaluation_frame
+    try:
+        await run_in_threadpool(save_evaluation_frame, settings, session_id, evaluation_id, image)
+    except OSError:
+        logger.exception("Could not retain evaluation frame %s", evaluation_id)
 
 
 @router.get("/watch-sessions/{session_id}/evaluations/{evaluation_id}/frame")
