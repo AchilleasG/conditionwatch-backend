@@ -17,6 +17,7 @@ def test_user_cannot_read_or_stop_another_users_session(client):
     bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
     assert client.delete(f"/v1/watch-sessions/{session_id}", headers=bob_headers).status_code == 404
     assert client.get("/v1/watch-sessions", headers=bob_headers).json() == []
+    assert client.get(f"/v1/watch-sessions/{session_id}/evaluations", headers=bob_headers).status_code == 404
 
 
 def test_fcm_token_moves_to_current_authenticated_owner(client):

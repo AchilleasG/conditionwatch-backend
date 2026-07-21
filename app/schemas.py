@@ -54,9 +54,22 @@ class FrameResult(BaseModel):
 class SessionOut(BaseModel):
     id: str
     condition: str
+    originalTranscript: str
     status: str
     sampleIntervalMs: int
     confidence: float | None
+    createdAt: str
+    evaluationCount: int
+
+
+class EvaluationOut(BaseModel):
+    id: str
+    matched: bool
+    confidence: float
+    explanation: str
+    model: str
+    createdAt: str
+    frameAvailable: bool
 
 
 class ConditionInterpretation(BaseModel):

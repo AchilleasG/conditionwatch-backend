@@ -63,6 +63,25 @@ def test_complete_targeted_match_pipeline(client, monkeypatch):
     assert retained.status_code == 200
     assert retained.content == b"\xff\xd8fake-jpeg\xff\xd9"
 
+    history = client.get("/v1/watch-sessions?q=dog&sort=newest", headers=headers)
+    assert history.status_code == 200
+    assert history.json()[0]["id"] == session_id
+    assert history.json()[0]["evaluationCount"] == 1
+    assert history.json()[0]["originalTranscript"] == "Let me know when the dog gets on the couch"
+    assert client.get("/v1/watch-sessions?q=elephant", headers=headers).json() == []
+
+    evaluations = client.get(f"/v1/watch-sessions/{session_id}/evaluations", headers=headers)
+    assert evaluations.status_code == 200
+    assert evaluations.json()[0]["id"] == evaluation_id
+    assert evaluations.json()[0]["matched"] is True
+    assert evaluations.json()[0]["frameAvailable"] is True
+    user_frame = client.get(
+        f"/v1/watch-sessions/{session_id}/evaluations/{evaluation_id}/frame",
+        headers=headers,
+    )
+    assert user_frame.status_code == 200
+    assert user_frame.content == b"\xff\xd8fake-jpeg\xff\xd9"
+
     repeated = client.post(f"/v1/watch-sessions/{session_id}/frames", headers=headers, files={"frame": ("frame.jpg", b"\xff\xd8again\xff\xd9", "image/jpeg")})
     assert repeated.json()["matched"] is True
     assert len(FakeFirebase.sent) == 1

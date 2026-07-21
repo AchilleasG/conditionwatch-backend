@@ -2,14 +2,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 import logging
 import tempfile
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from ..config import Settings, get_settings
 from ..database import get_db
 from ..models import Device, FrameEvaluation, SessionStatus, User, WatchSession, new_id
-from ..schemas import CreateSessionResponse, DeviceTokenRequest, FrameResult, SessionOut, StartSessionRequest
+from ..schemas import CreateSessionResponse, DeviceTokenRequest, EvaluationOut, FrameResult, SessionOut, StartSessionRequest
+from ..services.evaluation_frames import evaluation_frame_path
 from ..security import get_current_user
 from ..services.devices import upsert_device
 from ..services.firebase_service import FirebaseService
@@ -173,6 +175,66 @@ def stop_session(session_id: str, db: Session = Depends(get_db), user: User = De
 
 
 @router.get("/watch-sessions", response_model=list[SessionOut])
-def list_sessions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    sessions = db.scalars(select(WatchSession).where(WatchSession.user_id == user.id).order_by(WatchSession.created_at.desc()).limit(100)).all()
-    return [SessionOut(id=s.id, condition=s.normalized_condition, status=s.status, sampleIntervalMs=s.sample_interval_ms, confidence=s.last_confidence) for s in sessions]
+def list_sessions(
+    q: str = Query(default="", max_length=200),
+    sort: str = Query(default="newest", pattern="^(newest|oldest)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    count = select(func.count(FrameEvaluation.id)).where(FrameEvaluation.session_id == WatchSession.id).correlate(WatchSession).scalar_subquery()
+    statement = select(WatchSession, count).where(WatchSession.user_id == user.id)
+    if q.strip():
+        pattern = f"%{q.strip()}%"
+        statement = statement.where(or_(WatchSession.normalized_condition.ilike(pattern), WatchSession.original_transcript.ilike(pattern)))
+    ordering = WatchSession.created_at.asc() if sort == "oldest" else WatchSession.created_at.desc()
+    rows = db.execute(statement.order_by(ordering).limit(250)).all()
+    return [SessionOut(
+        id=s.id,
+        condition=s.normalized_condition,
+        originalTranscript=s.original_transcript,
+        status=s.status,
+        sampleIntervalMs=s.sample_interval_ms,
+        confidence=s.last_confidence,
+        createdAt=s.created_at.isoformat(),
+        evaluationCount=evaluation_count,
+    ) for s, evaluation_count in rows]
+
+
+@router.get("/watch-sessions/{session_id}/evaluations", response_model=list[EvaluationOut])
+def list_evaluations(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    owned_session(db, session_id, user)
+    evaluations = db.scalars(
+        select(FrameEvaluation).where(FrameEvaluation.session_id == session_id).order_by(FrameEvaluation.created_at.desc()).limit(500)
+    ).all()
+    return [EvaluationOut(
+        id=e.id,
+        matched=e.matched,
+        confidence=e.confidence,
+        explanation=e.explanation,
+        model=e.model,
+        createdAt=e.created_at.isoformat(),
+        frameAvailable=evaluation_frame_path(settings, session_id, e.id).is_file(),
+    ) for e in evaluations]
+
+
+@router.get("/watch-sessions/{session_id}/evaluations/{evaluation_id}/frame")
+def user_evaluation_frame(
+    session_id: str,
+    evaluation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
+    owned_session(db, session_id, user)
+    evaluation = db.scalar(select(FrameEvaluation).where(FrameEvaluation.id == evaluation_id, FrameEvaluation.session_id == session_id))
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+    path = evaluation_frame_path(settings, session_id, evaluation_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Frame was not retained")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
