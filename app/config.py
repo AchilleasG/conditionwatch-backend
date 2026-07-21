@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     max_frame_bytes: int = 4 * 1024 * 1024
     default_sample_interval_ms: int = 1500
     min_sample_interval_ms: int = 750
-    vision_match_threshold: float = 0.82
+    vision_match_threshold: float = 0.75
     cors_origins: list[str] = ["http://localhost:8000"]
 
     @field_validator("jwt_secret")
